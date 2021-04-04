@@ -1,3 +1,4 @@
 html5lib
 isodate
 pyparsing
+ipfshttpclient>=0.7.0

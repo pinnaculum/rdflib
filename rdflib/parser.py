@@ -21,6 +21,7 @@ from urllib.request import pathname2url
 from urllib.request import Request
 from urllib.request import url2pathname
 from urllib.parse import urljoin
+from urllib.parse import urlparse
 from urllib.request import urlopen
 
 from xml.sax import xmlreader
@@ -28,6 +29,8 @@ from xml.sax import xmlreader
 from rdflib import __version__
 from rdflib.term import URIRef
 from rdflib.namespace import Namespace
+
+from rdflib.plugins.sources.ipfs import ipfs_client_get
 
 __all__ = [
     "Parser",
@@ -159,17 +162,35 @@ class URLInputSource(InputSource):
                 + "application/xhtml+xml;q=0.5, */*;q=0.1"
             )
 
-        req = Request(system_id, None, myheaders)
-        file = urlopen(req)
-        # Fix for issue 130 https://github.com/RDFLib/rdflib/issues/130
-        self.url = file.geturl()  # in case redirections took place
-        self.setPublicId(self.url)
-        self.content_type = file.info().get("content-type")
-        if self.content_type is not None:
-            self.content_type = self.content_type.split(";", 1)[0]
-        self.setByteStream(file)
-        # TODO: self.setEncoding(encoding)
-        self.response_info = file.info()  # a mimetools.Message instance
+        url = urlparse(system_id)
+        if url.scheme in ['ips', 'ipschema']:
+            client = ipfs_client_get()
+            kList = client.key.list()
+
+            ipnsKey = None
+            for key in kList['Keys']:
+                if key['Name'] == url.netloc:
+                    ipnsKey = key['Id']
+
+            path = None if ipnsKey is None else f'/ipns/{ipnsKey}{url.path}'
+            data = client.cat(path)
+
+            self.content_type = 'application/ld+json'
+            self.setByteStream(BytesIO(data))
+            self.setPublicId(url)
+        else:
+            req = Request(system_id, None, myheaders)
+
+            file = urlopen(req)
+            # Fix for issue 130 https://github.com/RDFLib/rdflib/issues/130
+            self.url = file.geturl()  # in case redirections took place
+            self.setPublicId(self.url)
+            self.content_type = file.info().get("content-type")
+            if self.content_type is not None:
+                self.content_type = self.content_type.split(";", 1)[0]
+            self.setByteStream(file)
+            # TODO: self.setEncoding(encoding)
+            self.response_info = file.info()  # a mimetools.Message instance
 
     def __repr__(self):
         return self.url
